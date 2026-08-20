@@ -121,6 +121,12 @@ PALABRAS_ANULAN = [
 # (18 caracteres) son justo los que queremos que salgan a la luz.
 LARGO_MINIMO_MENSAJE = 12
 
+# Antes de publicar el reporte automatico, el bot revisa si ya publico uno
+# hace poco (por si Railway lo reinicio justo a esa hora). Solo mira hacia
+# atras esta cantidad de minutos: asi una prueba manual del mediodia NO
+# cancela el reporte automatico de la tarde.
+VENTANA_ANTIDUPLICADO_MINUTOS = 90
+
 # Cuantos mensajes "sin marcar" mostrar como maximo (los mas recientes).
 MAX_SIN_MARCAR = 8
 
