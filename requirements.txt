@@ -1,0 +1,2 @@
+slack-bolt==1.30.0
+apscheduler==3.11.3
