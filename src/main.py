@@ -9,6 +9,7 @@ de dos formas:
 
 import logging
 import sys
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -63,9 +64,17 @@ def generar_y_publicar(client, revisar_duplicado=False):
         resultado = None
 
     if revisar_duplicado:
-        desde, _ = lector.rango_del_dia()
+        # Solo miramos los ultimos minutos, no todo el dia: una prueba manual
+        # con /qa-reporte no debe cancelar el reporte automatico de la tarde.
+        desde = (
+            datetime.now(ZoneInfo(config.ZONA_HORARIA))
+            - timedelta(minutes=config.VENTANA_ANTIDUPLICADO_MINUTOS)
+        ).timestamp()
         if reporte.ya_se_publico_hoy(client, config.CANAL_REPORTE, desde):
-            log.info("El reporte de hoy ya estaba publicado. No se repite.")
+            log.info(
+                "Ya se publico un reporte hace menos de %s minutos. No se repite.",
+                config.VENTANA_ANTIDUPLICADO_MINUTOS,
+            )
             return None
 
     respuesta = reporte.publicar(
