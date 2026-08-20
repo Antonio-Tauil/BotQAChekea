@@ -1,0 +1,16 @@
+# Nunca subir credenciales
+.env
+.env.*
+*.token
+tokens.txt
+credenciales*.json
+
+# Basura de Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Basura del sistema
+.DS_Store
+Thumbs.db
