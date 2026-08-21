@@ -88,7 +88,8 @@ def _contexto(texto):
     return {"type": "context", "elements": [{"type": "mrkdwn", "text": texto}]}
 
 
-def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None):
+def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None,
+              rango="hoy"):
     """Devuelve (texto_plano, blocks, attachments) listos para publicar."""
     marcados = resultado["marcados"]
     sin_marcar = resultado["sin_marcar"]
@@ -101,20 +102,23 @@ def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None):
             conteos.append(f"{datos['emoji']} {n} {datos['titulo'].lower()}")
 
     resumen = (
-        f"{nombre_canal} · {total_mensajes} mensajes revisados · "
+        f"{nombre_canal} · {rango} · {total_mensajes} mensajes revisados · "
         f"*{resultado['total_marcados']} marcados como bug*"
     )
     if sin_marcar:
         resumen += f" · {len(sin_marcar)} posibles sin marcar"
+    if resultado.get("resueltos"):
+        resumen += f" · {len(resultado['resueltos'])} resueltos ✅ (no se muestran)"
+
+    if rango == "hoy":
+        titulo = f"🧪 Reporte Diario de QA · {fecha_larga(momento)}"
+    else:
+        titulo = f"🧪 Reporte de QA · {rango}"
 
     blocks = [
         {
             "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"🧪 Reporte Diario de QA · {fecha_larga(momento)}",
-                "emoji": True,
-            },
+            "text": {"type": "plain_text", "text": titulo, "emoji": True},
         },
         _contexto(resumen),
     ]
@@ -122,7 +126,7 @@ def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None):
         blocks.append(_contexto("  ·  ".join(conteos)))
 
     # --- Caso: dia sin nada ---
-    if not resultado["total_marcados"] and not sin_marcar:
+    if not resultado["total_marcados"] and not sin_marcar and not resultado.get("resueltos"):
         attachments = [
             {
                 "color": config.NIVELES["bajo"]["color"],
@@ -136,7 +140,7 @@ def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None):
             }
         ]
         blocks.append(_contexto(f"{config.LEYENDA_EMOJIS}\n_{config.MARCA_REPORTE}_"))
-        return f"Reporte Diario de QA · {fecha_larga(momento)} · sin bugs", blocks, attachments
+        return f"Reporte de QA ({rango}) · sin bugs", blocks, attachments
 
     # --- Un attachment por nivel de severidad ---
     attachments = []
@@ -175,10 +179,47 @@ def construir(resultado, total_mensajes, nombre_canal="#qa", momento=None):
     blocks.append(_contexto(f"{config.LEYENDA_EMOJIS}\n_{config.MARCA_REPORTE}_"))
 
     texto_plano = (
-        f"Reporte Diario de QA · {fecha_larga(momento)} · "
+        f"Reporte de QA ({rango}) · "
         f"{resultado['total_marcados']} bugs marcados"
     )
     return texto_plano, blocks, attachments
+
+
+def construir_ayuda():
+    """Explica los 4 emojis y los comandos disponibles. Se publica en el
+    canal para que cualquiera lo pueda leer, no solo quien lo pidio."""
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "🧪 Cómo funciona el Bot de QA", "emoji": True},
+        },
+        _seccion(
+            "*Cómo marcar un bug*\n"
+            "Reacciona sobre el mensaje con uno de estos 4 emojis, según qué tan grave es:\n\n"
+            "🔴 *Crítico* — bloquea, se pierde plata, o rompe algo central\n"
+            "🟠 *Alto* — falla importante pero hay forma de seguir\n"
+            "🟡 *Medio* — molesta pero no bloquea\n"
+            "🟢 *Bajo* — detalle, cosmético"
+        ),
+        _seccion(
+            "*Cuando ya se resolvió*\n"
+            "Reacciona con ✅ sobre el mensaje. Deja de salir en el reporte, "
+            "así no se acumulan bugs viejos que ya se arreglaron."
+        ),
+        _seccion(
+            "*Comandos*\n"
+            "`/qa-reporte` — genera el reporte de hoy al instante\n"
+            "`/qa-reporte 7` — el reporte de los últimos 7 días\n"
+            "`/qa-reporte todo` — revisa todo el historial del canal\n"
+            "`/qa-ayuda` — muestra este mensaje"
+        ),
+        _contexto(
+            "El reporte automático sale todos los días laborales a las 6:00 PM. "
+            "Si un mensaje no tiene ninguna reacción, el bot igual lo revisa por "
+            "palabras clave y lo muestra en \"posibles bugs sin marcar\"."
+        ),
+    ]
+    return "Cómo funciona el Bot de QA", blocks, []
 
 
 def construir_error(motivo):
