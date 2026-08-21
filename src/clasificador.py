@@ -53,20 +53,33 @@ def suena_a_falla(texto):
     return False, None
 
 
+def esta_resuelto(reacciones):
+    """True si alguien reacciono marcando el bug como ya resuelto."""
+    return any(r in config.EMOJIS_RESUELTO for r in (reacciones or []))
+
+
 def clasificar(mensajes):
-    """Separa los mensajes del dia en marcados y sin marcar.
+    """Separa los mensajes del dia en marcados, sin marcar y resueltos.
 
     Devuelve un diccionario:
       {
-        "marcados":   {"critico": [...], "alto": [...], ...},
-        "sin_marcar": [...],
+        "marcados":       {"critico": [...], "alto": [...], ...},
+        "sin_marcar":     [...],
+        "resueltos":      [...],   # ya no se muestran, solo se cuentan
         "total_marcados": int,
       }
     """
     marcados = {nivel: [] for nivel in config.NIVELES}
     sin_marcar = []
+    resueltos = []
 
     for msg in mensajes:
+        if esta_resuelto(msg.get("reacciones")):
+            # Se marco como resuelto: no importa que severidad tenia,
+            # ya no debe aparecer en el reporte.
+            resueltos.append(msg)
+            continue
+
         nivel = severidad_por_reaccion(msg.get("reacciones"))
         if nivel:
             marcados[nivel].append(msg)
@@ -92,5 +105,6 @@ def clasificar(mensajes):
         "marcados": marcados,
         "sin_marcar": sin_marcar,
         "sin_marcar_ocultos": sobrantes,
+        "resueltos": resueltos,
         "total_marcados": sum(len(v) for v in marcados.values()),
     }
