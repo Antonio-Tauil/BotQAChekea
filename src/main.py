@@ -41,10 +41,69 @@ def _nombre_canal(client, canal_id):
         return "#qa"
 
 
-def generar_y_publicar(client, revisar_duplicado=False):
+def resumen_diagnostico(client, dias=None):
+    """Texto corto que explica que vio el bot. Sirve para entender por que
+    un reporte salio vacio, sin tener que abrir los logs de Railway."""
+    try:
+        desde, hasta = lector.rango_del_dia(dias=dias)
+        zona = ZoneInfo(config.ZONA_HORARIA)
+        h1 = ("el inicio del canal" if desde == 0
+              else datetime.fromtimestamp(desde, zona).strftime("%d/%m %I:%M %p"))
+        h2 = datetime.fromtimestamp(hasta, zona).strftime("%d/%m %I:%M %p")
+        mensajes, crudos = lector.leer_dia(client, dias=dias)
+
+        vistas = {}
+        for m in mensajes:
+            for r in m.get("reacciones") or []:
+                vistas[r] = vistas.get(r, 0) + 1
+
+        if vistas:
+            reconocidas = [
+                f"`:{n}:` x{c}" + ("  ✅" if n in config.EMOJIS_SEVERIDAD else "  ❌ no cuenta")
+                for n, c in sorted(vistas.items(), key=lambda x: -x[1])
+            ]
+            texto_reacciones = "\n".join("• " + r for r in reconocidas)
+        else:
+            texto_reacciones = (
+                "• _ninguna_ — no hay ni una sola reacción en los mensajes de "
+                "este rango.\n  Si marcaste mensajes más viejos, prueba con "
+                "`/qa-reporte todo` para revisar el historial completo."
+            )
+
+        return (
+            f"*Diagnóstico de la última corrida*\n"
+            f"• Rango leído: *{h1}* → *{h2}*\n"
+            f"• Mensajes en ese rango: *{crudos}* "
+            f"(útiles, sin apps ni avisos: *{len(mensajes)}*)\n"
+            f"• Reacciones encontradas:\n{texto_reacciones}"
+        )
+    except Exception as e:
+        return f"No pude armar el diagnóstico: {e}"
+
+
+def interpretar_rango(texto):
+    """Lee lo que la persona escribio despues de /qa-reporte.
+
+      /qa-reporte           -> lo de siempre (segun DIAS_A_REVISAR)
+      /qa-reporte 7         -> los ultimos 7 dias
+      /qa-reporte todo      -> todo el historial del canal
+    """
+    limpio = (texto or "").strip().lower()
+    if not limpio:
+        return None
+    if limpio in ("todo", "todos", "all", "historial", "completo"):
+        return 0
+    try:
+        n = int(limpio)
+        return n if 0 <= n <= 365 else None
+    except ValueError:
+        return None
+
+
+def generar_y_publicar(client, revisar_duplicado=False, dias=None):
     """El trabajo completo: leer, clasificar, armar y publicar."""
     try:
-        mensajes, total_crudos = lector.leer_dia(client)
+        mensajes, total_crudos = lector.leer_dia(client, dias=dias)
         resultado = clasificador.clasificar(mensajes)
 
         # Solo pedimos el enlace de los mensajes que salen publicados.
@@ -57,6 +116,7 @@ def generar_y_publicar(client, revisar_duplicado=False):
             resultado,
             total_mensajes=total_crudos,
             nombre_canal=_nombre_canal(client, config.CANAL_QA),
+            rango=lector.describir_rango(dias),
         )
     except Exception as e:
         log.exception("Fallo generando el reporte")
@@ -94,15 +154,38 @@ def generar_y_publicar(client, revisar_duplicado=False):
 # ---------------------------------------------------------------------------
 
 @app.command("/qa-reporte")
-def comando_reporte(ack, respond, client):
+def comando_reporte(ack, respond, client, command):
     # Confirmamos a Slack de inmediato (tenemos 3 segundos) y despues
     # hacemos el trabajo pesado. Es la leccion aprendida con /cobro.
     ack()
+    dias = interpretar_rango(command.get("text"))
     try:
-        generar_y_publicar(client, revisar_duplicado=False)
+        generar_y_publicar(client, revisar_duplicado=False, dias=dias)
+        if config.DIAGNOSTICO:
+            # Solo lo ve quien escribio el comando, no molesta al canal.
+            respond(resumen_diagnostico(client, dias))
     except Exception as e:
         log.exception("Fallo el comando /qa-reporte")
         respond(f"No pude generar el reporte: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Comando de ayuda: /qa-ayuda
+# ---------------------------------------------------------------------------
+
+@app.command("/qa-ayuda")
+def comando_ayuda(ack, client, command):
+    ack()
+    try:
+        texto, blocks, attachments = reporte.construir_ayuda()
+        client.chat_postMessage(
+            channel=command["channel_id"],
+            text=texto,
+            blocks=blocks,
+            attachments=attachments,
+        )
+    except Exception:
+        log.exception("Fallo el comando /qa-ayuda")
 
 
 # ---------------------------------------------------------------------------
