@@ -30,15 +30,37 @@ def _zona():
     return ZoneInfo(config.ZONA_HORARIA)
 
 
-def rango_del_dia(momento=None):
-    """Devuelve (inicio, fin) del dia de hoy como timestamps de Unix."""
+def rango_del_dia(momento=None, dias=None):
+    """Devuelve (inicio, fin) del rango a revisar, en timestamps de Unix.
+
+    dias = 1  -> solo hoy (desde la hora de inicio)
+    dias = 7  -> los ultimos 7 dias
+    dias = 0  -> todo el historial del canal
+    """
+    dias = config.DIAS_A_REVISAR if dias is None else dias
     ahora = momento or datetime.now(_zona())
+
+    if dias == 0:
+        return 0.0, ahora.timestamp()
+
     inicio = ahora.replace(
         hour=config.HORA_INICIO_LECTURA, minute=0, second=0, microsecond=0
     )
     if ahora < inicio:  # por si se corre de madrugada
         inicio = inicio - timedelta(days=1)
+    if dias > 1:
+        inicio = inicio - timedelta(days=dias - 1)
     return inicio.timestamp(), ahora.timestamp()
+
+
+def describir_rango(dias=None):
+    """Frase corta para el encabezado del reporte."""
+    dias = config.DIAS_A_REVISAR if dias is None else dias
+    if dias == 0:
+        return "todo el historial"
+    if dias == 1:
+        return "hoy"
+    return f"los últimos {dias} días"
 
 
 def _es_mensaje_util(msg):
@@ -58,7 +80,7 @@ def _paginar_historial(client, canal, desde, hasta):
     """Trae todos los mensajes del canal en el rango, pagina por pagina."""
     mensajes = []
     cursor = None
-    for _ in range(20):  # tope de seguridad: 20 paginas (4000 mensajes)
+    for _ in range(config.MAX_PAGINAS_HISTORIAL):  # tope de seguridad
         resp = client.conversations_history(
             channel=canal,
             oldest=str(desde),
@@ -135,14 +157,14 @@ def _permalink(client, canal, ts):
         return None
 
 
-def leer_dia(client, canal=None, momento=None):
+def leer_dia(client, canal=None, momento=None, dias=None):
     """Devuelve la lista de mensajes utiles del dia, ya normalizados.
 
     Cada mensaje es un diccionario simple:
       {ts, texto, autor, hora, reacciones, adjuntos, enlace, en_hilo}
     """
     canal = canal or config.CANAL_QA
-    desde, hasta = rango_del_dia(momento)
+    desde, hasta = rango_del_dia(momento, dias)
 
     crudos = _paginar_historial(client, canal, desde, hasta)
     crudos += _traer_respuestas_de_hilos(client, canal, crudos, desde, hasta)
